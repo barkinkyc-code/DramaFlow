@@ -120,14 +120,12 @@ function loadTracking(token) {
 
   const { stop, route, loc } = result;
 
-  // Init map
   if (!map) {
     map = L.map('track-map', { zoomControl: false, attributionControl: false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
   }
 
-  // Teslim edildi mi?
   if (stop.status === 'done') {
     showDelivered(stop);
     document.getElementById('live-dot').style.background = '#22c55e';
@@ -137,13 +135,11 @@ function loadTracking(token) {
     return;
   }
 
-  // Aktif takip
   document.getElementById('normal-card').style.display = 'block';
   document.getElementById('t-company').textContent = stop.companyName;
   document.getElementById('t-addr').textContent = stop.address;
   document.getElementById('t-plate').textContent = route.plate;
 
-  // Araç ikonu
   const vIcon = L.divIcon({
     html: `<div style="background:#3b82f6;border:3px solid white;border-radius:50%;width:20px;height:20px;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>`,
     iconSize: [20, 20], iconAnchor: [10, 10]
@@ -153,7 +149,6 @@ function loadTracking(token) {
     iconSize: [18, 18], iconAnchor: [9, 9]
   });
 
-  // Hedef marker
   if (!destMarker) destMarker = L.marker([stop.lat, stop.lng], { icon: dIcon }).bindPopup(stop.companyName).addTo(map);
 
   if (loc) {
@@ -162,7 +157,6 @@ function loadTracking(token) {
 
     map.fitBounds([[loc.lat, loc.lng], [stop.lat, stop.lng]], { padding: [60, 60] });
 
-    // ETA
     getETA(loc.lat, loc.lng, stop.lat, stop.lng).then(eta => {
       if (!eta) return;
       document.getElementById('t-eta-mins').textContent = eta.mins;

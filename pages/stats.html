@@ -15,6 +15,7 @@
       İstatistikler
     </div>
     <div class="topbar-actions">
+      <button class="theme-toggle" id="theme-toggle-btn" onclick="toggleTheme()" title="Tema Değiştir"></button>
       <button class="btn btn-ghost btn-sm" onclick="exportCSV()">CSV</button>
       <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Temizle</button>
     </div>
@@ -90,7 +91,6 @@ let session, showDetails = false;
 function init() {
   session = requireAuth('admin');
   if (!session) return;
-  // Bugünün tarihini seç
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('date-picker').value = today;
   renderStats();
@@ -109,11 +109,9 @@ function renderStats() {
   if (!dateStr) return;
   const routes = getRoutesForDate(dateStr);
 
-  // Tüm durağı düzleştir
   const allStops = routes.flatMap(r => (r.stops || []).map(s => ({ ...s, plate: r.plate, driverName: r.driverName })));
   const doneStops = allStops.filter(s => s.status === 'done');
 
-  // Özet
   const firstOut = doneStops.reduce((min, s) => (!min || s.startedAt < min ? s.startedAt : min), null);
   const lastDone = doneStops.reduce((max, s) => (!max || s.deliveredAt > max ? s.deliveredAt : max), null);
 
@@ -127,7 +125,6 @@ function renderStats() {
     <div class="stat-box"><div class="stat-num" style="font-size:18px;">${fmt(lastDone)}</div><div class="stat-label">Son Teslim</div></div>
   `;
 
-  // Plaka bazlı
   const plateEl = document.getElementById('plate-stats');
   plateEl.innerHTML = '';
   const byPlate = {};
@@ -155,7 +152,6 @@ function renderStats() {
     });
   }
 
-  // Şoför bazlı
   const driverEl = document.getElementById('driver-stats');
   driverEl.innerHTML = '';
   const byDriver = {};
@@ -180,7 +176,6 @@ function renderStats() {
     });
   }
 
-  // Detay tablosu
   renderDetails(allStops);
 }
 
