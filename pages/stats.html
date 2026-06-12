@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0f1c3f">
+<title>İstatistikler — Drama Makine</title>
+<link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+<div class="app-shell">
+  <div class="topbar">
+    <div class="topbar-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      İstatistikler
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost btn-sm" onclick="exportCSV()">CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearAll()" style="color:var(--red)">Temizle</button>
+    </div>
+  </div>
+
+  <div class="page-content">
+
+    <!-- Tarih Seçici -->
+    <div class="card-navy mt-12 mb-16">
+      <div class="section-title mb-8">Tarih Seçimi</div>
+      <input type="date" id="date-picker" onchange="renderStats()" style="width:100%;">
+    </div>
+
+    <!-- Özet Kartlar -->
+    <div class="stats-grid mb-16" id="stats-summary"></div>
+
+    <!-- Plaka Bazlı -->
+    <div class="section-head"><span class="section-title">Plaka Bazlı Teslimat</span></div>
+    <div id="plate-stats" class="mb-16"></div>
+
+    <!-- Şoför Bazlı -->
+    <div class="section-head"><span class="section-title">Şoför Bazlı</span></div>
+    <div id="driver-stats" class="mb-16"></div>
+
+    <!-- Detaylı Sipariş Geçmişi -->
+    <div class="section-head">
+      <span class="section-title">Detaylı Geçmiş</span>
+      <button class="btn btn-ghost btn-sm" onclick="toggleDetails()">Göster/Gizle</button>
+    </div>
+    <div id="order-details" class="hidden mb-16"></div>
+
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-item" onclick="location.href='panel.html'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Panel
+    </button>
+    <button class="nav-item" onclick="location.href='plan.html'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Plan
+    </button>
+    <button class="nav-item" onclick="location.href='companies.html'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      Firmalar
+    </button>
+    <button class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      İstatistik
+    </button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+
+<!-- Confirm Clear Modal -->
+<div id="clear-modal" class="modal-bg hidden">
+  <div class="modal-box">
+    <div class="modal-title" style="color:var(--red)">Tüm Verileri Sil?</div>
+    <p class="text-muted mb-16">Bu işlem tüm rota ve teslimat verilerini kalıcı olarak siler. Geri alınamaz.</p>
+    <div class="flex gap-8">
+      <button class="btn btn-ghost w-full" onclick="document.getElementById('clear-modal').classList.add('hidden')">İptal</button>
+      <button class="btn btn-danger w-full" onclick="doDelete()">Evet, Sil</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+let session, showDetails = false;
+
+function init() {
+  session = requireAuth('admin');
+  if (!session) return;
+  // Bugünün tarihini seç
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('date-picker').value = today;
+  renderStats();
+}
+
+function getRoutesForDate(dateStr) {
+  const routes = getRoutes();
+  return routes.filter(r => {
+    const d = new Date(r.date).toISOString().split('T')[0];
+    return d === dateStr;
+  });
+}
+
+function renderStats() {
+  const dateStr = document.getElementById('date-picker').value;
+  if (!dateStr) return;
+  const routes = getRoutesForDate(dateStr);
+
+  // Tüm durağı düzleştir
+  const allStops = routes.flatMap(r => (r.stops || []).map(s => ({ ...s, plate: r.plate, driverName: r.driverName })));
+  const doneStops = allStops.filter(s => s.status === 'done');
+
+  // Özet
+  const firstOut = doneStops.reduce((min, s) => (!min || s.startedAt < min ? s.startedAt : min), null);
+  const lastDone = doneStops.reduce((max, s) => (!max || s.deliveredAt > max ? s.deliveredAt : max), null);
+
+  const summaryEl = document.getElementById('stats-summary');
+  summaryEl.innerHTML = `
+    <div class="stat-box"><div class="stat-num">${allStops.length}</div><div class="stat-label">Toplam Durak</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--green)">${doneStops.length}</div><div class="stat-label">Teslim Edildi</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--yellow)">${allStops.filter(s=>s.status==='active').length}</div><div class="stat-label">Yolda</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--gray)">${allStops.filter(s=>s.status==='pending').length}</div><div class="stat-label">Bekliyor</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:18px;">${fmt(firstOut)}</div><div class="stat-label">İlk Çıkış</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:18px;">${fmt(lastDone)}</div><div class="stat-label">Son Teslim</div></div>
+  `;
+
+  // Plaka bazlı
+  const plateEl = document.getElementById('plate-stats');
+  plateEl.innerHTML = '';
+  const byPlate = {};
+  allStops.forEach(s => {
+    if (!byPlate[s.plate]) byPlate[s.plate] = { total: 0, done: 0 };
+    byPlate[s.plate].total++;
+    if (s.status === 'done') byPlate[s.plate].done++;
+  });
+  if (Object.keys(byPlate).length === 0) {
+    plateEl.innerHTML = '<div class="info-banner">Bu tarih için veri yok.</div>';
+  } else {
+    Object.entries(byPlate).forEach(([plate, data]) => {
+      const pct = data.total ? Math.round(data.done / data.total * 100) : 0;
+      plateEl.innerHTML += `
+        <div class="card-navy mb-8">
+          <div class="flex justify-between items-center mb-8">
+            <span class="badge badge-blue" style="font-size:14px;padding:6px 14px;">${plate}</span>
+            <span class="text-muted">${data.done}/${data.total} teslimat</span>
+          </div>
+          <div style="background:var(--navy);border-radius:99px;height:8px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:var(--green);border-radius:99px;transition:width 0.4s;"></div>
+          </div>
+          <div class="text-muted text-small mt-8">%${pct} tamamlandı</div>
+        </div>`;
+    });
+  }
+
+  // Şoför bazlı
+  const driverEl = document.getElementById('driver-stats');
+  driverEl.innerHTML = '';
+  const byDriver = {};
+  allStops.forEach(s => {
+    const k = s.driverName || 'Bilinmiyor';
+    if (!byDriver[k]) byDriver[k] = { total: 0, done: 0 };
+    byDriver[k].total++;
+    if (s.status === 'done') byDriver[k].done++;
+  });
+  if (Object.keys(byDriver).length === 0) {
+    driverEl.innerHTML = '<div class="info-banner">Bu tarih için şoför verisi yok.</div>';
+  } else {
+    Object.entries(byDriver).forEach(([name, data]) => {
+      driverEl.innerHTML += `
+        <div class="card-navy mb-8 flex justify-between items-center">
+          <div>
+            <div class="font-bold text-white">${name}</div>
+            <div class="text-muted text-small">${data.done} teslim, ${data.total - data.done} bekleyen</div>
+          </div>
+          <span class="badge badge-green" style="font-size:16px;">${data.done}</span>
+        </div>`;
+    });
+  }
+
+  // Detay tablosu
+  renderDetails(allStops);
+}
+
+function renderDetails(stops) {
+  const el = document.getElementById('order-details');
+  if (stops.length === 0) { el.innerHTML = '<div class="info-banner">Veri yok.</div>'; return; }
+  let html = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted);">
+      <th style="text-align:left;padding:8px 4px;">Firma</th>
+      <th style="text-align:left;padding:8px 4px;">Plaka</th>
+      <th style="text-align:left;padding:8px 4px;">Çıkış</th>
+      <th style="text-align:left;padding:8px 4px;">Teslim</th>
+      <th style="text-align:left;padding:8px 4px;">Durum</th>
+    </tr></thead><tbody>`;
+  stops.forEach(s => {
+    const statusBadge = s.status === 'done'
+      ? '<span class="badge badge-green">✓</span>'
+      : s.status === 'active'
+        ? '<span class="badge badge-yellow">Yolda</span>'
+        : '<span class="badge badge-gray">Bekliyor</span>';
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 4px;color:var(--white);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.companyName}</td>
+      <td style="padding:8px 4px;color:var(--blue-light);">${s.plate || '—'}</td>
+      <td style="padding:8px 4px;">${fmt(s.startedAt)}</td>
+      <td style="padding:8px 4px;">${fmt(s.deliveredAt)}</td>
+      <td style="padding:8px 4px;">${statusBadge}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+function toggleDetails() {
+  showDetails = !showDetails;
+  document.getElementById('order-details').classList.toggle('hidden', !showDetails);
+}
+
+function clearAll() { document.getElementById('clear-modal').classList.remove('hidden'); }
+
+function doDelete() {
+  const dateStr = document.getElementById('date-picker').value;
+  let routes = getRoutes();
+  routes = routes.filter(r => new Date(r.date).toISOString().split('T')[0] !== dateStr);
+  DB.set('routes', routes);
+  document.getElementById('clear-modal').classList.add('hidden');
+  showToast('Veriler silindi ✓');
+  renderStats();
+}
+
+function exportCSV() {
+  const dateStr = document.getElementById('date-picker').value;
+  const routes = getRoutesForDate(dateStr);
+  const stops = routes.flatMap(r => (r.stops || []).map(s => ({
+    Tarih: fmtDate(r.date),
+    Plaka: r.plate,
+    Sofor: r.driverName,
+    Firma: s.companyName,
+    Adres: s.address,
+    Durum: s.status === 'done' ? 'Teslim' : s.status === 'active' ? 'Yolda' : 'Bekliyor',
+    CikisSaati: fmt(s.startedAt),
+    TeslimSaati: fmt(s.deliveredAt),
+  })));
+  if (stops.length === 0) { showToast('Dışa aktarılacak veri yok.'); return; }
+  const header = Object.keys(stops[0]).join(',');
+  const rows = stops.map(s => Object.values(s).map(v => `"${v}"`).join(','));
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `sevkiyat_${dateStr}.csv`; a.click();
+  showToast('CSV indirildi ✓');
+}
+
+init();
+</script>
+</body>
+</html>

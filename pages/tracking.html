@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0f1c3f">
+<title>Canlı Takip — Drama Makine</title>
+<link rel="stylesheet" href="../css/main.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+html, body { height: 100%; overflow: hidden; }
+#map-container { position: fixed; inset: 0; }
+#track-map { width: 100%; height: 100%; }
+.track-header { position: absolute; top: 0; left: 0; right: 0; z-index: 500; background: linear-gradient(var(--navy-2) 60%, transparent); padding: 12px 16px 32px; }
+.track-brand { display: flex; align-items: center; gap: 10px; }
+.brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); animation: pulse-dot 1.5s infinite; }
+.track-footer { position: absolute; bottom: 0; left: 0; right: 0; z-index: 500; padding: 0 12px 24px; }
+.track-card { background: var(--navy-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.track-company { font-size: 17px; font-weight: 700; color: var(--white); margin-bottom: 4px; }
+.track-addr { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.eta-row { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; }
+.eta-big { font-size: 32px; font-weight: 800; color: var(--white); line-height: 1; }
+.eta-label { font-size: 13px; color: var(--text-muted); }
+.eta-dist { font-size: 13px; color: var(--blue-light); }
+.meta-row { display: flex; gap: 16px; margin-top: 10px; }
+.meta-item { display: flex; flex-direction: column; }
+.meta-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.meta-val { font-size: 14px; font-weight: 600; color: var(--white); }
+.delivered-banner { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); border-radius: var(--radius); padding: 20px; text-align: center; }
+.delivered-icon { font-size: 40px; margin-bottom: 8px; }
+.delivered-title { font-size: 20px; font-weight: 700; color: var(--green); }
+.delivered-sub { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="loading-overlay" class="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Konum yükleniyor...</div>
+</div>
+
+<div id="map-container" style="display:none;">
+  <div id="track-map"></div>
+
+  <div class="track-header">
+    <div class="track-brand">
+      <div class="brand-dot" id="live-dot"></div>
+      <span style="font-size:14px;font-weight:600;color:var(--white);">Drama Makine — Canlı Takip</span>
+    </div>
+  </div>
+
+  <div class="track-footer">
+    <!-- Normal takip -->
+    <div id="normal-card" class="track-card" style="display:none;">
+      <div class="track-company" id="t-company"></div>
+      <div class="track-addr">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="t-addr"></span>
+      </div>
+      <div class="eta-row">
+        <span class="eta-big" id="t-eta-mins">—</span>
+        <span class="eta-label">dk kaldı</span>
+        <span class="eta-dist" id="t-eta-dist"></span>
+      </div>
+      <div class="meta-row">
+        <div class="meta-item">
+          <span class="meta-label">Tahmini Varış</span>
+          <span class="meta-val" id="t-eta-arrive">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Araç</span>
+          <span class="meta-val" id="t-plate">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Durum</span>
+          <span class="meta-val" id="t-status" style="color:var(--yellow)">Yolda</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Teslim edildi -->
+    <div id="delivered-card" style="display:none;">
+      <div class="delivered-banner">
+        <div class="delivered-icon">✅</div>
+        <div class="delivered-title">Teslim Edildi</div>
+        <div class="delivered-sub" id="t-delivered-time"></div>
+      </div>
+    </div>
+
+    <!-- Bulunamadı -->
+    <div id="notfound-card" style="display:none;">
+      <div class="track-card" style="text-align:center;padding:24px;">
+        <div style="font-size:32px;margin-bottom:8px;">🔍</div>
+        <div style="font-size:15px;font-weight:600;color:var(--white);">Takip bulunamadı</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Link geçersiz veya teslimat tamamlandı.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, vehicleMarker, destMarker, routeLine;
+let refreshTimer;
+
+function init() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  if (!token) { showNotFound(); return; }
+  loadTracking(token);
+  refreshTimer = setInterval(() => loadTracking(token), 8000);
+}
+
+function loadTracking(token) {
+  const result = getLocationByToken(token);
+  document.getElementById('loading-overlay').style.display = 'none';
+  document.getElementById('map-container').style.display = 'block';
+
+  if (!result) { showNotFound(); clearInterval(refreshTimer); return; }
+
+  const { stop, route, loc } = result;
+
+  // Init map
+  if (!map) {
+    map = L.map('track-map', { zoomControl: false, attributionControl: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.control.zoom({ position: 'topright' }).addTo(map);
+  }
+
+  // Teslim edildi mi?
+  if (stop.status === 'done') {
+    showDelivered(stop);
+    document.getElementById('live-dot').style.background = '#22c55e';
+    document.getElementById('live-dot').style.animation = 'none';
+    clearInterval(refreshTimer);
+    if (loc) map.setView([loc.lat, loc.lng], 14);
+    return;
+  }
+
+  // Aktif takip
+  document.getElementById('normal-card').style.display = 'block';
+  document.getElementById('t-company').textContent = stop.companyName;
+  document.getElementById('t-addr').textContent = stop.address;
+  document.getElementById('t-plate').textContent = route.plate;
+
+  // Araç ikonu
+  const vIcon = L.divIcon({
+    html: `<div style="background:#3b82f6;border:3px solid white;border-radius:50%;width:20px;height:20px;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>`,
+    iconSize: [20, 20], iconAnchor: [10, 10]
+  });
+  const dIcon = L.divIcon({
+    html: `<div style="background:#ef4444;border:3px solid white;border-radius:50%;width:18px;height:18px;"></div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9]
+  });
+
+  // Hedef marker
+  if (!destMarker) destMarker = L.marker([stop.lat, stop.lng], { icon: dIcon }).bindPopup(stop.companyName).addTo(map);
+
+  if (loc) {
+    if (vehicleMarker) vehicleMarker.setLatLng([loc.lat, loc.lng]);
+    else vehicleMarker = L.marker([loc.lat, loc.lng], { icon: vIcon }).bindPopup('Araç: ' + route.plate).addTo(map);
+
+    map.fitBounds([[loc.lat, loc.lng], [stop.lat, stop.lng]], { padding: [60, 60] });
+
+    // ETA
+    getETA(loc.lat, loc.lng, stop.lat, stop.lng).then(eta => {
+      if (!eta) return;
+      document.getElementById('t-eta-mins').textContent = eta.mins;
+      document.getElementById('t-eta-arrive').textContent = eta.arrive;
+      document.getElementById('t-eta-dist').textContent = eta.dist + ' km';
+      if (routeLine) map.removeLayer(routeLine);
+      if (eta.coords) {
+        const pts = eta.coords.map(c => [c[1], c[0]]);
+        routeLine = L.polyline(pts, { color: '#3b82f6', weight: 4, opacity: 0.8 }).addTo(map);
+      }
+    });
+  } else {
+    map.setView([stop.lat, stop.lng], 13);
+    document.getElementById('t-status').textContent = 'GPS bekleniyor...';
+    document.getElementById('t-status').style.color = 'var(--text-muted)';
+  }
+}
+
+function showDelivered(stop) {
+  document.getElementById('normal-card').style.display = 'none';
+  document.getElementById('delivered-card').style.display = 'block';
+  document.getElementById('t-delivered-time').textContent = stop.companyName + ' — ' + fmt(stop.deliveredAt) + ' saatinde teslim edildi';
+}
+
+function showNotFound() {
+  document.getElementById('loading-overlay').style.display = 'none';
+  document.getElementById('map-container').style.display = 'block';
+  document.getElementById('notfound-card').style.display = 'block';
+  if (!map) {
+    map = L.map('track-map', { zoomControl: false, attributionControl: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    map.setView([40.19, 29.06], 11);
+  }
+}
+
+init();
+</script>
+</body>
+</html>

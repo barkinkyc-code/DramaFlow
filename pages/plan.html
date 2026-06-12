@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0f1c3f">
+<title>Plan — Drama Makine</title>
+<link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+<div class="app-shell">
+  <div class="topbar">
+    <div class="topbar-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Günlük Plan
+    </div>
+    <div class="topbar-actions">
+      <span id="top-name" class="badge badge-blue" style="font-size:12px;"></span>
+    </div>
+  </div>
+
+  <div class="page-content">
+
+    <!-- Araç Seçimi -->
+    <div class="card-navy mt-12">
+      <div class="section-title mb-8">Araç Seçimi</div>
+      <div style="display:flex;gap:10px;" id="plate-selector">
+        <!-- JS ile doldurulacak -->
+      </div>
+    </div>
+
+    <!-- Firma Arama -->
+    <div class="mt-16">
+      <div class="section-head">
+        <span class="section-title">Firma Ekle</span>
+      </div>
+      <div class="search-wrap mb-12">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="firm-search" placeholder="Firma adı ara..." oninput="filterCompanies()" autocomplete="off">
+      </div>
+      <div id="company-search-list" style="max-height:280px;overflow-y:auto;"></div>
+    </div>
+
+    <!-- Seçili Duraklar -->
+    <div class="mt-16">
+      <div class="section-head">
+        <span class="section-title">Seçilen Duraklar</span>
+        <span id="stop-count" class="badge badge-blue">0</span>
+      </div>
+      <div id="stop-list"></div>
+      <div id="no-stops" class="info-banner">Yukarıdan firma seçerek plan oluşturun.</div>
+    </div>
+
+    <!-- Kaydet Butonu -->
+    <div class="mt-16 mb-16" id="save-section" style="display:none">
+      <div id="plan-error" class="error-banner mb-12" style="display:none"></div>
+      <button class="btn btn-success btn-xl" onclick="savePlan()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        Planı Kaydet ve Başlat
+      </button>
+    </div>
+
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-item" onclick="location.href='panel.html'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Panel
+    </button>
+    <button class="nav-item active" onclick="location.href='plan.html'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      Plan
+    </button>
+    <button class="nav-item" onclick="location.href='companies.html'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      Firmalar
+    </button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/auth.js"></script>
+<script>
+let session, selectedStops = [], selectedPlate = null, allCompanies = [];
+
+function init() {
+  session = requireAuth();
+  if (!session) return;
+  document.getElementById('top-name').textContent = session.name;
+
+  // Plaka seçimi — admin tümünü görebilir, şoför kendi plakasını
+  const plates = session.role === 'admin' ? APP_CONFIG.plates : [session.plate];
+  selectedPlate = plates[0];
+  const sel = document.getElementById('plate-selector');
+  plates.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost' + (p === selectedPlate ? ' btn-primary' : '');
+    btn.textContent = p;
+    btn.onclick = () => {
+      selectedPlate = p;
+      sel.querySelectorAll('button').forEach(b => { b.className = 'btn btn-ghost'; });
+      btn.className = 'btn btn-primary';
+    };
+    sel.appendChild(btn);
+  });
+
+  // Firmaları yükle
+  allCompanies = getCompanies();
+  filterCompanies();
+
+  // Mevcut aktif plan varsa yükle
+  const existing = getActiveRoute(session.id);
+  if (existing && existing.stops) {
+    selectedStops = existing.stops.map(s => ({
+      id: s.companyId || s.id,
+      name: s.companyName,
+      address: s.address,
+      lat: s.lat,
+      lng: s.lng,
+    }));
+    renderStops();
+  }
+}
+
+function filterCompanies() {
+  const q = document.getElementById('firm-search').value.toLowerCase();
+  const favs = getFavorites();
+  const list = document.getElementById('company-search-list');
+  list.innerHTML = '';
+
+  let filtered = allCompanies.filter(c => c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q));
+  // Favoriler üstte
+  filtered.sort((a, b) => (favs.includes(b.id) ? 1 : 0) - (favs.includes(a.id) ? 1 : 0));
+
+  filtered.forEach(c => {
+    const isSelected = selectedStops.some(s => s.id === c.id);
+    const isFav = favs.includes(c.id);
+    const el = document.createElement('div');
+    el.className = 'company-item' + (isSelected ? ' selected' : '') + (isFav ? ' fav' : '');
+    el.innerHTML = `
+      <div>
+        <div class="company-name">${c.name}</div>
+        <div class="company-addr">${c.address}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="fav-icon" style="font-size:18px;cursor:pointer;color:${isFav?'#f59e0b':'#475569'}" onclick="event.stopPropagation();toggleFav('${c.id}')">★</span>
+        <span style="font-size:20px;color:${isSelected?'#22c55e':'#475569'}">${isSelected ? '✓' : '+'}</span>
+      </div>
+    `;
+    el.onclick = () => toggleCompany(c);
+    list.appendChild(el);
+  });
+}
+
+function toggleCompany(c) {
+  const idx = selectedStops.findIndex(s => s.id === c.id);
+  if (idx >= 0) selectedStops.splice(idx, 1);
+  else selectedStops.push({ id: c.id, name: c.name, address: c.address, lat: c.lat, lng: c.lng });
+  renderStops();
+  filterCompanies();
+}
+
+function toggleFav(id) {
+  toggleFavorite(id);
+  filterCompanies();
+}
+
+function removeStop(idx) {
+  selectedStops.splice(idx, 1);
+  renderStops();
+  filterCompanies();
+}
+
+function moveStop(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= selectedStops.length) return;
+  [selectedStops[idx], selectedStops[newIdx]] = [selectedStops[newIdx], selectedStops[idx]];
+  renderStops();
+}
+
+function renderStops() {
+  const list = document.getElementById('stop-list');
+  const noneEl = document.getElementById('no-stops');
+  const saveEl = document.getElementById('save-section');
+  document.getElementById('stop-count').textContent = selectedStops.length;
+  list.innerHTML = '';
+
+  if (selectedStops.length === 0) {
+    noneEl.style.display = 'block';
+    saveEl.style.display = 'none';
+    return;
+  }
+  noneEl.style.display = 'none';
+  saveEl.style.display = 'block';
+
+  selectedStops.forEach((s, i) => {
+    const el = document.createElement('div');
+    el.className = 'plan-stop fade-in';
+    el.innerHTML = `
+      <div class="stop-order">${i + 1}</div>
+      <div class="plan-stop-info">
+        <div class="plan-stop-name">${s.name}</div>
+        <div class="plan-stop-addr">${s.address}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <button class="btn-icon" style="width:28px;height:28px;font-size:14px;" onclick="moveStop(${i},-1)" ${i===0?'disabled':''}>↑</button>
+        <button class="btn-icon" style="width:28px;height:28px;font-size:14px;" onclick="moveStop(${i},1)" ${i===selectedStops.length-1?'disabled':''}>↓</button>
+      </div>
+      <div class="plan-remove" onclick="removeStop(${i})">✕</div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+function savePlan() {
+  const errEl = document.getElementById('plan-error');
+  if (!selectedPlate) { errEl.textContent = 'Lütfen araç seçin.'; errEl.style.display = 'block'; return; }
+  if (selectedStops.length === 0) { errEl.textContent = 'En az bir firma ekleyin.'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+
+  const routeId = 'r_' + Date.now();
+  const stops = selectedStops.map((s, i) => ({
+    id: 'stop_' + Date.now() + '_' + i,
+    companyId: s.id,
+    companyName: s.name,
+    address: s.address,
+    lat: s.lat,
+    lng: s.lng,
+    order: i + 1,
+    status: 'pending',
+    trackToken: null,
+    startedAt: null,
+    deliveredAt: null,
+  }));
+
+  const route = {
+    id: routeId,
+    driverId: session.id,
+    driverName: session.name,
+    plate: selectedPlate,
+    date: new Date().toISOString(),
+    status: 'active',
+    stops,
+  };
+
+  saveRoute(route);
+  showToast('Plan kaydedildi! ✓', 2000);
+  setTimeout(() => location.href = 'panel.html', 1200);
+}
+
+init();
+</script>
+</body>
+</html>

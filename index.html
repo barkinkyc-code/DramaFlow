@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0f1c3f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Drama Makine — Sevkiyat</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="css/main.css">
+<title>Drama Makine — Sevkiyat</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="css/main.css">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="page-login">
+
+<div class="login-wrap">
+  <div class="login-logo">
+    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+      <rect width="48" height="48" rx="12" fill="#1e3a7a"/>
+      <path d="M10 32 L24 14 L38 32" stroke="#60a5fa" stroke-width="3" stroke-linejoin="round" fill="none"/>
+      <circle cx="24" cy="32" r="4" fill="#60a5fa"/>
+    </svg>
+    <div class="login-brand">
+      <span class="brand-main">Drama Makine</span>
+      <span class="brand-sub">Sevkiyat Takip Sistemi</span>
+    </div>
+  </div>
+
+  <div class="login-card">
+    <div id="login-error" class="error-banner" style="display:none"></div>
+    <div class="field-group">
+      <label>Kullanıcı adı</label>
+      <input type="text" id="login-user" placeholder="sofor1" autocomplete="username" autocapitalize="none">
+    </div>
+    <div class="field-group">
+      <label>Şifre</label>
+      <input type="password" id="login-pass" placeholder="••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-primary btn-xl" id="login-btn" onclick="doLogin()">
+      <span>Giriş Yap</span>
+    </button>
+    <div class="login-hint">Demo: <strong>sofor1</strong> / <strong>1234</strong> &nbsp;|&nbsp; Admin: <strong>admin</strong> / <strong>drama2024</strong></div>
+  </div>
+
+  <div class="app-version">v1.0.0 — Supabase bağlantısı gereklidir</div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+</script>
+<script>
+  if (localStorage.getItem('dm_session')) {
+    const s = JSON.parse(localStorage.getItem('dm_session'));
+    if (s && s.role === 'admin') location.href = 'pages/panel.html';
+    else location.href = 'pages/panel.html';
+  }
+  document.getElementById('login-pass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+</script>
+</body>
+</html>
